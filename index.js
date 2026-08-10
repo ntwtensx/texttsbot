@@ -1,12 +1,19 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+
+// 🚀 [System Architecture Fix] 
+// บังคับให้ Node.js และระบบของ Render ชี้เป้าหมายไปหา FFmpeg ที่เราโหลดมา
+// ป้องกันปัญหา "เชื่อมต่อห้องได้แต่บอทไม่มีเสียง" (Audio Player Error)
+const ffmpegPath = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpegPath;
+
+const { Client, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
 // สร้าง Express Server เล็กๆ เพื่อให้ Render สามารถ Bind Port ได้ (ป้องกันบอทดับ)
 const app = express();
-app.get('/', (req, res) => res.send('🚀 บอทซูซี่กำลังทำงานอยู่!'));
+app.get('/', (req, res) => res.send('🚀 บอทซูซี่กำลังทำงานอยู่ และพร้อมอ่านเสียงแล้ว!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Web Server ทำงานที่พอร์ต ${PORT}`));
 
