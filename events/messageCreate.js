@@ -10,30 +10,23 @@ const {
 } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 
-// ตัวแปรควบคุมระบบ
+// ⚙️ [Config]: ตั้งค่าเป้าหมายและตัวแปรสถานะ
 let isReadingMode = false;
 const TARGET_CHANNEL_ID = '995629374722297946';
 
-// สร้าง Audio Player แบบมีประสิทธิภาพ
+// 🎛️ [Audio Player]: สร้างเครื่องเล่นเสียงที่มีความทนทานต่อข้อผิดพลาด (Fault Tolerance)
 const player = createAudioPlayer({
     behaviors: {
-        noSubscriber: NoSubscriberBehavior.Play, // เล่นเสียงแม้จะยังไม่มีคนฟังเพื่อกันบัค
+        noSubscriber: NoSubscriberBehavior.Play,
     },
 });
 
-// ระบบคิวเสียง
+// 📚 [Queue System]: ระบบจัดคิวเสียงเพื่อไม่ให้บอทพูดแทรกกัน
 const audioQueue = [];
 let isPlaying = false;
 
-// ----------------------------------------------------
-// ระบบ Debug และการจัดการสถานะ Player
-// ----------------------------------------------------
-player.on(AudioPlayerStatus.Playing, () => {
-    console.log('🔊 [Audio Player] กำลังเล่นเสียง...');
-});
-
+// จัดการสถานะเครื่องเล่นเสียง
 player.on(AudioPlayerStatus.Idle, () => {
-    console.log('✅ [Audio Player] เล่นเสียงจบแล้ว กำลังตรวจสอบคิวถัดไป');
     isPlaying = false;
     playNext();
 });
@@ -41,12 +34,10 @@ player.on(AudioPlayerStatus.Idle, () => {
 player.on('error', error => {
     console.error(`❌ [Audio Player Error]: ${error.message}`);
     isPlaying = false;
-    playNext(); // ข้ามไปเล่นคิวต่อไปเพื่อไม่ให้ระบบค้าง
+    playNext();
 });
 
-// ----------------------------------------------------
-// ฟังก์ชันเล่นเสียง (อัปเกรดความเสถียร)
-// ----------------------------------------------------
+// 🗣️ [TTS Function]: ฟังก์ชันดึงเสียงและเล่น
 async function playNext(connection = null) {
     if (audioQueue.length === 0) {
         isPlaying = false;
@@ -58,21 +49,16 @@ async function playNext(connection = null) {
     const text = audioQueue.shift();
     
     try {
-        console.log(`⏳ [TTS] กำลังประมวลผลข้อความ: "${text}"`);
-        
-        // สร้าง URL จาก Google TTS API
+        console.log(`⏳ [TTS] ประมวลผล: "${text}"`);
+        // ดึง URL เสียงจาก Google Translate API
         const url = googleTTS.getAudioUrl(text, { 
             lang: 'th', 
             slow: false, 
             host: 'https://translate.google.com' 
         });
         
-        // สร้าง Audio Resource
         const resource = createAudioResource(url);
-        
-        // เล่นเสียง
         player.play(resource);
-        
     } catch (error) {
         console.error("❌ [TTS API Error]:", error);
         isPlaying = false;
@@ -80,20 +66,20 @@ async function playNext(connection = null) {
     }
 }
 
-// ----------------------------------------------------
-// ระบบ Event Message Create
-// ----------------------------------------------------
 module.exports = {
     name: Events.MessageCreate,
     async execute(message, client) {
-        if (message.author.bot) return;
+        // 🐛 [Debug]: เช็คว่าบอทได้รับข้อความจริงๆ (ช่วยตรวจสอบเรื่อง Intents)
+        // console.log(`💬 [Chat] ${message.author.tag}: ${message.content}`);
 
-        // คำสั่ง "เปิดอ่านระบบแชท"
+        if (message.author.bot) return; // ข้ามข้อความจากบอทด้วยกัน
+
+        // 🟢 [Command]: เปิดระบบ
         if (message.content === 'เปิดอ่านระบบแชท') {
             const channel = client.channels.cache.get(TARGET_CHANNEL_ID);
             
             if (!channel || !channel.isVoiceBased()) {
-                return message.reply("❌ ไม่พบห้องเสียงที่กำหนด หรือ ID ไม่ใช่ห้องเสียงครับ");
+                return message.reply("❌ ไม่พบห้องเสียงที่กำหนดครับ");
             }
 
             try {
@@ -103,50 +89,46 @@ module.exports = {
                     adapterCreator: channel.guild.voiceAdapterCreator,
                 });
 
-                // ติดตามสถานะการเชื่อมต่อห้องเสียง
-                connection.on(VoiceConnectionStatus.Ready, () => {
-                    console.log('✅ [Voice] บอทเชื่อมต่อห้องเสียงพร้อมใช้งานแล้ว!');
-                });
-
                 connection.subscribe(player);
                 isReadingMode = true;
 
                 return message.reply("<:white_heart:1536417255024492654>ซูซี่พร้อมที่จะอ่านแชทข้อความแล้วค่ะ");
             } catch (error) {
-                console.error("❌ [Voice Join Error]:", error);
-                return message.reply("❌ เกิดข้อผิดพลาดในการเข้าห้องเสียง ตรวจสอบสิทธิ์ของบอทด้วยครับ");
+                console.error("❌ [Voice Error]:", error);
+                return message.reply("❌ เกิดข้อผิดพลาดในการเข้าห้องเสียง ตรวจสอบสิทธิ์ด้วยครับ");
             }
         }
 
-        // คำสั่ง "ปิดอ่านระบบแชท"
+        // 🔴 [Command]: ปิดระบบ
         if (message.content === 'ปิดอ่านระบบแชท') {
             const connection = getVoiceConnection(message.guild.id);
-            if (connection) {
-                connection.destroy();
-            }
+            if (connection) connection.destroy();
             
             isReadingMode = false;
-            audioQueue.length = 0;
+            audioQueue.length = 0; // ล้างคิวทิ้ง
             isPlaying = false;
 
             return message.reply("<:white_heart:1536417255024492654>ซูซี่ยกเลิกที่จะอ่านแชทข้อความแล้วค่ะ");
         }
 
-        // ระบบอ่านแชทอัตโนมัติ
+        // 🎙️ [Auto Reading Logic]: ประมวลผลและอ่านข้อความ
         if (isReadingMode && message.channel.id === TARGET_CHANNEL_ID) {
             let textToRead = message.content;
 
-            if (message.attachments.size > 0) {
-                textToRead += " ส่งไฟล์";
-            }
+            // 1. กรองไฟล์แนบ
+            if (message.attachments.size > 0) textToRead += " ส่งไฟล์";
 
-            textToRead = textToRead.replace(/<:[a-zA-Z0-9_]+:[0-9]+>/g, (match) => match.split(':')[1]);
-            textToRead = textToRead.replace(/<a:[a-zA-Z0-9_]+:[0-9]+>/g, (match) => match.split(':')[1]);
+            // 2. กรอง Emoji พิเศษ (ดึงเฉพาะชื่อมาอ่าน)
+            textToRead = textToRead.replace(/<:[a-zA-Z0-9_]+:[0-9]+>/g, match => match.split(':')[1]);
+            textToRead = textToRead.replace(/<a:[a-zA-Z0-9_]+:[0-9]+>/g, match => match.split(':')[1]);
+            
+            // 3. กรอง Links
             textToRead = textToRead.replace(/https?:\/\/\S+/g, "ส่งลิงก์");
 
             textToRead = textToRead.trim();
 
             if (textToRead.length > 0) {
+                // กันข้อความยาวเกินลิมิต Google TTS (200 ตัวอักษร)
                 if (textToRead.length > 195) {
                     textToRead = textToRead.substring(0, 195) + " และอีกมากมาย";
                 }
@@ -157,10 +139,7 @@ module.exports = {
                 if (connection && connection.state.status === VoiceConnectionStatus.Ready) {
                     playNext(connection);
                 } else if (connection) {
-                    // หากบอทยังเชื่อมต่อไม่เสร็จสมบูรณ์ ให้รอจนกว่าจะ Ready
-                    connection.once(VoiceConnectionStatus.Ready, () => {
-                        playNext(connection);
-                    });
+                    connection.once(VoiceConnectionStatus.Ready, () => playNext(connection));
                 }
             }
         }

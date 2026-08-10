@@ -1,32 +1,34 @@
 require('dotenv').config();
 
-// 🚀 [System Architecture] บังคับชี้เป้าหมาย FFmpeg สำหรับ Render
-// แก้ปัญหาบอทเข้าห้องเสียงได้แต่ไม่มีเสียงพูด
+// 🚀 [System Engineering]: บังคับชี้เป้าหมาย FFmpeg สำหรับ Render
+// แก้ปัญหา OS หาโปรแกรมแปลงเสียงไม่เจอ (ป้องกันบอทเข้าห้องแล้วเงียบ)
 const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
-// 🌐 [Web Service] สร้าง Express Server เพื่อให้ Render ตรวจสอบ Port ได้
+// 🌐 [Web Service]: สร้าง Express Server ดัก Port ให้ Render มองเห็นว่าบอททำงานอยู่
 const app = express();
 app.get('/', (req, res) => res.send('🚀 ระบบบอทซูซี่กำลังทำงานและพร้อมอ่านเสียงแล้ว!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 [Server] Web Server ทำงานที่พอร์ต ${PORT}`));
 
-// 🤖 [Discord Client] กำหนดสิทธิ์ให้บอทมองเห็นข้อความและเข้าห้องเสียงได้
+// 🤖 [Discord Client]: ตั้งค่าสิทธิ์ (Intents) ให้ครอบคลุมการอ่านแชทและเสียง
+// *** สำคัญ: ต้องไปเปิด Message Content Intent ใน Discord Developer Portal ด้วย ***
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.MessageContent, // หัวใจหลักในการอ่านข้อความ
         GatewayIntentBits.GuildVoiceStates,
-    ]
+    ],
+    partials: [Partials.Message, Partials.Channel]
 });
 
-// 📂 [Event Handler] ระบบโหลดไฟล์ Event อัตโนมัติแบบไดนามิก
+// 📂 [Dynamic Event Handler]: โหลดไฟล์ระบบแยกส่วน (Modular) อัตโนมัติ
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
@@ -40,5 +42,5 @@ for (const file of eventFiles) {
     }
 }
 
-// 🔑 เข้าสู่ระบบ Discord ด้วย Token จากไฟล์ .env
+// 🔑 เริ่มต้นการทำงานของบอท
 client.login(process.env.TOKEN);
