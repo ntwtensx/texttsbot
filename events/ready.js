@@ -1,21 +1,27 @@
-const { Events, ActivityType } = require('discord.js');
+// events/ready.js
+const { ActivityType } = require('discord.js');
 
 module.exports = {
-    name: Events.ClientReady,
+    name: 'ready',
     once: true,
     execute(client) {
-        // ประมวลผลเวลาปัจจุบัน (Timezone: Bangkok)
+        // ดึงเวลาปัจจุบัน รูปแบบ HH:MM (โซนเวลาประเทศไทย)
         const now = new Date();
         const timeString = now.toLocaleTimeString('th-TH', { 
             hour: '2-digit', 
-            minute: '2-digit', 
-            timeZone: 'Asia/Bangkok' 
+            minute: '2-digit',
+            timeZone: 'Asia/Bangkok'
         });
 
-        // 🎨 [Design]: ตั้งค่า Status แสดงผลให้สวยงามและรู้เวลาที่บอทรันล่าสุด
-        client.user.setActivity(`อ่านแชท [${timeString}]`, { type: ActivityType.Playing });
-        
-        console.log(`🚀 [System] บอทออนไลน์แล้วในชื่อ ${client.user.tag}`);
-        console.log(`🕒 [Status] อัพเดทเวลา: ${timeString}`);
+        const statusMessage = `อ่านแชท [${timeString}]`;
+
+        // ตั้งค่าสถานะบอท (Presence)
+        client.user.setPresence({
+            activities: [{ name: statusMessage, type: ActivityType.Playing }],
+            status: 'online',
+        });
+
+        console.log(`🚀 บอทออนไลน์แล้ว! เข้าสู่ระบบในชื่อ: ${client.user.tag}`);
+        console.log(`✨ สถานะปัจจุบัน: ${statusMessage}`);
     },
 };

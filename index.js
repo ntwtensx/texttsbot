@@ -1,40 +1,39 @@
+// index.js
 require('dotenv').config();
-
-// 🚀 [System Engineering]: บังคับชี้เป้าหมาย FFmpeg สำหรับ Render
-// แก้ปัญหา OS หาโปรแกรมแปลงเสียงไม่เจอ (ป้องกันบอทเข้าห้องแล้วเงียบ)
-const ffmpegPath = require('ffmpeg-static');
-process.env.FFMPEG_PATH = ffmpegPath;
-
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
-const path = require('path');
 const express = require('express');
 
-// 🌐 [Web Service]: สร้าง Express Server ดัก Port ให้ Render มองเห็นว่าบอททำงานอยู่
+// 🚀 [1] สร้าง Express Server เล็กๆ เพื่อให้ Render ตรวจจับ Port และทำงานตลอด 24 ชม.
 const app = express();
-app.get('/', (req, res) => res.send('🚀 ระบบบอทซูซี่กำลังทำงานและพร้อมอ่านเสียงแล้ว!'));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 [Server] Web Server ทำงานที่พอร์ต ${PORT}`));
+app.get('/', (req, res) => res.send('🚀 texttsbot is running!'));
+app.listen(process.env.PORT || 3000, () => console.log('🌐 Web server is up on port ' + (process.env.PORT || 3000)));
 
-// 🤖 [Discord Client]: ตั้งค่าสิทธิ์ (Intents) ให้ครอบคลุมการอ่านแชทและเสียง
-// *** สำคัญ: ต้องไปเปิด Message Content Intent ใน Discord Developer Portal ด้วย ***
+// 🚀 [2] ตั้งค่า Client และ Intent (สิทธิ์ที่บอทต้องใช้)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, // หัวใจหลักในการอ่านข้อความ
-        GatewayIntentBits.GuildVoiceStates,
-    ],
-    partials: [Partials.Message, Partials.Channel]
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates // จำเป็นสำหรับการเชื่อมต่อห้องเสียง
+    ]
 });
 
-// 📂 [Dynamic Event Handler]: โหลดไฟล์ระบบแยกส่วน (Modular) อัตโนมัติ
-const eventsPath = path.join(__dirname, 'events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+// 🚀 [3] สร้างตัวแปร Global สำหรับเก็บสถานะ TTS ของบอท
+client.ttsConfig = {
+    isActive: false,
+    connection: null,
+    player: null,
+    queue: [],
+    isPlaying: false,
+    targetVoiceChannel: '995629374722297946',
+    targetTextChannel: '995629374722297946'
+};
 
+// 🚀 [4] โหลด Events อัตโนมัติ (Ready, MessageCreate)
+const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 for (const file of eventFiles) {
-    const filePath = path.join(eventsPath, file);
-    const event = require(filePath);
+    const event = require(`./events/${file}`);
     if (event.once) {
         client.once(event.name, (...args) => event.execute(...args, client));
     } else {
@@ -42,5 +41,5 @@ for (const file of eventFiles) {
     }
 }
 
-// 🔑 เริ่มต้นการทำงานของบอท
+// 🚀 [5] Login เข้าสู่ระบบ Discord
 client.login(process.env.TOKEN);

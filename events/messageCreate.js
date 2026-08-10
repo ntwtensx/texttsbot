@@ -1,147 +1,126 @@
-const { Events } = require('discord.js');
-const { 
-    joinVoiceChannel, 
-    createAudioPlayer, 
-    createAudioResource, 
-    AudioPlayerStatus, 
-    getVoiceConnection,
-    VoiceConnectionStatus,
-    NoSubscriberBehavior
-} = require('@discordjs/voice');
+// events/messageCreate.js
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 
-// ⚙️ [Config]: ตั้งค่าเป้าหมายและตัวแปรสถานะ
-let isReadingMode = false;
-const TARGET_CHANNEL_ID = '995629374722297946';
-
-// 🎛️ [Audio Player]: สร้างเครื่องเล่นเสียงที่มีความทนทานต่อข้อผิดพลาด (Fault Tolerance)
-const player = createAudioPlayer({
-    behaviors: {
-        noSubscriber: NoSubscriberBehavior.Play,
-    },
-});
-
-// 📚 [Queue System]: ระบบจัดคิวเสียงเพื่อไม่ให้บอทพูดแทรกกัน
-const audioQueue = [];
-let isPlaying = false;
-
-// จัดการสถานะเครื่องเล่นเสียง
-player.on(AudioPlayerStatus.Idle, () => {
-    isPlaying = false;
-    playNext();
-});
-
-player.on('error', error => {
-    console.error(`❌ [Audio Player Error]: ${error.message}`);
-    isPlaying = false;
-    playNext();
-});
-
-// 🗣️ [TTS Function]: ฟังก์ชันดึงเสียงและเล่น
-async function playNext(connection = null) {
-    if (audioQueue.length === 0) {
-        isPlaying = false;
-        return;
-    }
-    if (isPlaying) return;
-
-    isPlaying = true;
-    const text = audioQueue.shift();
-    
-    try {
-        console.log(`⏳ [TTS] ประมวลผล: "${text}"`);
-        // ดึง URL เสียงจาก Google Translate API
-        const url = googleTTS.getAudioUrl(text, { 
-            lang: 'th', 
-            slow: false, 
-            host: 'https://translate.google.com' 
-        });
-        
-        const resource = createAudioResource(url);
-        player.play(resource);
-    } catch (error) {
-        console.error("❌ [TTS API Error]:", error);
-        isPlaying = false;
-        playNext();
-    }
-}
-
 module.exports = {
-    name: Events.MessageCreate,
+    name: 'messageCreate',
     async execute(message, client) {
-        // 🐛 [Debug]: เช็คว่าบอทได้รับข้อความจริงๆ (ช่วยตรวจสอบเรื่อง Intents)
-        // console.log(`💬 [Chat] ${message.author.tag}: ${message.content}`);
+        // ข้ามข้อความที่บอทพิมพ์เอง หรือมาจาก DM
+        if (message.author.bot || !message.guild) return;
 
-        if (message.author.bot) return; // ข้ามข้อความจากบอทด้วยกัน
+        const config = client.ttsConfig;
 
-        // 🟢 [Command]: เปิดระบบ
-        if (message.content === 'เปิดอ่านระบบแชท') {
-            const channel = client.channels.cache.get(TARGET_CHANNEL_ID);
+        // 🟢 คำสั่ง: "เปิดอ่านแชท"
+        if (message.content === 'เปิดอ่านแชท') {
+            const voiceChannel = message.guild.channels.cache.get(config.targetVoiceChannel);
             
-            if (!channel || !channel.isVoiceBased()) {
-                return message.reply("❌ ไม่พบห้องเสียงที่กำหนดครับ");
+            if (!voiceChannel) {
+                return message.reply('❌ ไม่พบห้องเสียงที่กำหนดในระบบครับ');
             }
 
             try {
-                const connection = joinVoiceChannel({
-                    channelId: channel.id,
-                    guildId: channel.guild.id,
-                    adapterCreator: channel.guild.voiceAdapterCreator,
+                // เชื่อมต่อห้องเสียง
+                config.connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: message.guild.id,
+                    adapterCreator: message.guild.voiceAdapterCreator,
                 });
 
-                connection.subscribe(player);
-                isReadingMode = true;
+                // สร้าง Audio Player และผูกกับ Connection
+                config.player = createAudioPlayer();
+                config.connection.subscribe(config.player);
+                config.isActive = true;
 
-                return message.reply("<:white_heart:1536417255024492654>ซูซี่พร้อมที่จะอ่านแชทข้อความแล้วค่ะ");
+                // เมื่ออ่านจบ 1 ข้อความ ให้ไปอ่านข้อความถัดไปในคิว
+                config.player.on(AudioPlayerStatus.Idle, () => {
+                    config.isPlaying = false;
+                    playNextInQueue(client);
+                });
+
+                return message.reply('<:white_heart:1536417255024492654> ซูซี่พร้อมที่จะอ่านแชทข้อความแล้วค่ะ');
             } catch (error) {
-                console.error("❌ [Voice Error]:", error);
-                return message.reply("❌ เกิดข้อผิดพลาดในการเข้าห้องเสียง ตรวจสอบสิทธิ์ด้วยครับ");
+                console.error(error);
+                return message.reply('❌ เกิดข้อผิดพลาดในการเชื่อมต่อห้องเสียง');
             }
         }
 
-        // 🔴 [Command]: ปิดระบบ
-        if (message.content === 'ปิดอ่านระบบแชท') {
-            const connection = getVoiceConnection(message.guild.id);
-            if (connection) connection.destroy();
-            
-            isReadingMode = false;
-            audioQueue.length = 0; // ล้างคิวทิ้ง
-            isPlaying = false;
+        // 🔴 คำสั่ง: "ปิดอ่านแชท"
+        if (message.content === 'ปิดอ่านแชท') {
+            if (config.connection) {
+                config.connection.destroy(); // ตัดการเชื่อมต่อ
+            }
+            // รีเซ็ตสถานะ
+            config.isActive = false;
+            config.connection = null;
+            if (config.player) config.player.stop();
+            config.queue = [];
+            config.isPlaying = false;
 
-            return message.reply("<:white_heart:1536417255024492654>ซูซี่ยกเลิกที่จะอ่านแชทข้อความแล้วค่ะ");
+            return message.reply('<:white_heart:1536417255024492654> ซูซี่ยกเลิกที่จะอ่านแชทข้อความแล้วค่ะ');
         }
 
-        // 🎙️ [Auto Reading Logic]: ประมวลผลและอ่านข้อความ
-        if (isReadingMode && message.channel.id === TARGET_CHANNEL_ID) {
+        // 🔊 ระบบดักจับข้อความเพื่อนำไปอ่าน (เมื่อเปิดใช้งานและพิมพ์ในช่องที่กำหนด)
+        if (config.isActive && message.channel.id === config.targetTextChannel) {
             let textToRead = message.content;
 
-            // 1. กรองไฟล์แนบ
-            if (message.attachments.size > 0) textToRead += " ส่งไฟล์";
+            // 1. ตรวจสอบว่ามีการส่งไฟล์/รูปภาพหรือไม่
+            if (message.attachments.size > 0) {
+                textToRead += textToRead ? " และส่งไฟล์" : "ส่งไฟล์";
+            }
 
-            // 2. กรอง Emoji พิเศษ (ดึงเฉพาะชื่อมาอ่าน)
-            textToRead = textToRead.replace(/<:[a-zA-Z0-9_]+:[0-9]+>/g, match => match.split(':')[1]);
-            textToRead = textToRead.replace(/<a:[a-zA-Z0-9_]+:[0-9]+>/g, match => match.split(':')[1]);
-            
-            // 3. กรอง Links
+            // 2. แปลง Custom Emoji ของ Discord (<:name:id>) ให้เหลือแค่ชื่อ
+            textToRead = textToRead.replace(/<a?:([a-zA-Z0-9_]+):\d+>/g, "อิโมจิ $1 ");
+
+            // 3. แปลง URL ให้บอทอ่านว่า "ส่งลิงก์" (เพื่อป้องกันบอทอ่าน URL ยาวๆ)
             textToRead = textToRead.replace(/https?:\/\/\S+/g, "ส่งลิงก์");
 
+            // ลบช่องว่างส่วนเกิน
             textToRead = textToRead.trim();
 
             if (textToRead.length > 0) {
-                // กันข้อความยาวเกินลิมิต Google TTS (200 ตัวอักษร)
-                if (textToRead.length > 195) {
-                    textToRead = textToRead.substring(0, 195) + " และอีกมากมาย";
-                }
-
-                audioQueue.push(textToRead);
+                // Google TTS จำกัดที่ 200 ตัวอักษรต่อ 1 Request
+                const safeText = textToRead.substring(0, 200);
                 
-                const connection = getVoiceConnection(message.guild.id);
-                if (connection && connection.state.status === VoiceConnectionStatus.Ready) {
-                    playNext(connection);
-                } else if (connection) {
-                    connection.once(VoiceConnectionStatus.Ready, () => playNext(connection));
+                // นำข้อความเข้าคิว
+                config.queue.push(safeText);
+                
+                // ถ้าบอทไม่ได้กำลังพูดอยู่ ให้เริ่มเล่นคิวเลย
+                if (!config.isPlaying) {
+                    playNextInQueue(client);
                 }
             }
         }
-    }
+    },
 };
+
+// 🛠️ ฟังก์ชันสำหรับเล่นเสียงตามคิว (Queue System)
+async function playNextInQueue(client) {
+    const config = client.ttsConfig;
+
+    // ถ้าคิวว่างเปล่า ให้หยุดทำงาน
+    if (config.queue.length === 0) {
+        config.isPlaying = false;
+        return;
+    }
+
+    config.isPlaying = true;
+    const text = config.queue.shift(); // ดึงข้อความแรกออกจากคิว
+
+    try {
+        // ขอ URL เสียงจาก Google TTS (รองรับภาษาไทย)
+        const audioUrl = googleTTS.getAudioUrl(text, {
+            lang: 'th',
+            slow: false,
+            host: 'https://translate.google.com',
+        });
+
+        // สร้าง Resource เสียงและสั่งให้ Player เล่น
+        const resource = createAudioResource(audioUrl);
+        config.player.play(resource);
+
+    } catch (error) {
+        console.error('❌ TTS Error:', error);
+        config.isPlaying = false;
+        playNextInQueue(client); // ข้ามไปเล่นข้อความถัดไปถ้า Error
+    }
+}
