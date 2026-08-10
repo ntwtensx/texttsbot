@@ -6,20 +6,20 @@ module.exports = {
     execute(client) {
         console.log(`✅ บอทออนไลน์แล้วในชื่อ: ${client.user.tag}`);
 
-        // ดึงเวลาปัจจุบันและปรับเป็นเวลาไทย (UTC+7) เผื่อเซิร์ฟเวอร์ Render อยู่ต่างประเทศ
+        // ดึงเวลาปัจจุบันและปรับเป็นเวลาไทย (UTC+7)
         const date = new Date();
-        date.setUTCHours(date.getUTCHours() + 7);
+        date.setUTCHours(date.getUTCHours() + 7); 
         
-        // จัดฟอร์แมตเวลาให้อยู่ในรูป 00:00
+        // จัดฟอร์แมตเวลา 00:00
         const hours = String(date.getUTCHours()).padStart(2, '0');
         const minutes = String(date.getUTCMinutes()).padStart(2, '0');
         const timeString = `${hours}:${minutes}`;
 
-        // ตั้งค่า Status
+        // ตั้งค่า Status ของบอท
         client.user.setPresence({
             activities: [{
                 name: 'customstatus',
-                type: ActivityType.Custom, // ใช้ Custom Status
+                type: ActivityType.Custom,
                 state: `อ่านแชท [${timeString}]`
             }],
             status: 'online',
