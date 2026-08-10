@@ -4,10 +4,16 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
 const express = require('express');
 
-// 🚀 [1] สร้าง Express Server เล็กๆ เพื่อให้ Render ตรวจจับ Port และทำงานตลอด 24 ชม.
+// 🚀 [1] ระบบ Web Server สำหรับ Keep-Alive บน Render
 const app = express();
-app.get('/', (req, res) => res.send('🚀 texttsbot is running!'));
-app.listen(process.env.PORT || 3000, () => console.log('🌐 Web server is up on port ' + (process.env.PORT || 3000)));
+// ดึงค่า Port จาก Environment (เช่น 10000 บน Render) ถ้าไม่มีให้ใช้ 3000 (เครื่องเราเอง)
+const PORT = process.env.PORT || 3000; 
+
+app.get('/', (req, res) => res.send(`🚀 texttsbot is running securely on port ${PORT}!`));
+app.listen(PORT, () => {
+    console.log(`🌐 [Web Server] เริ่มทำงานเรียบร้อยแล้ว! รันอยู่ที่ Port: ${PORT}`);
+    console.log(`💡 (หากอยู่บน Render การจับ Port ${PORT} ถือว่าระบบทำงานถูกต้อง 100%)`);
+});
 
 // 🚀 [2] ตั้งค่า Client และ Intent (สิทธิ์ที่บอทต้องใช้)
 const client = new Client({
