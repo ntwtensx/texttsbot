@@ -1,75 +1,52 @@
 // events/messageCreate.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, StreamType } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 const { Readable } = require('stream');
 
 module.exports = {
     name: 'messageCreate',
     async execute(message, client) {
-        // ข้ามข้อความที่บอทพิมพ์เอง หรือมาจาก DM เพื่อป้องกันลูปอินฟินิตี้
         if (message.author.bot || !message.guild) return;
 
         // ==========================================
-        // 🧹 1. ระบบจัดการแชท (Moderation: ลบข้อความ)
+        // 🧹 1. ระบบจัดการแชท (Moderation: !dems)
         // ==========================================
         if (message.content.startsWith('!dems')) {
-            // เช็คสิทธิ์ความปลอดภัย: ต้องมีสิทธิ์ลบข้อความ ถึงจะใช้คำสั่งนี้ได้
             if (!message.member.permissions.has('ManageMessages')) {
                 return message.reply('❌ คุณไม่มีสิทธิ์ในการลบข้อความครับ!');
             }
-
-            // แยกข้อความเพื่อหาจำนวนที่ต้องการลบ (เช่น "!dems 10" -> args[1] คือ "10")
             const args = message.content.split(' ');
             const amount = parseInt(args[1]);
 
-            // ตรวจสอบความถูกต้องของตัวเลข (Validation)
-            if (isNaN(amount)) {
-                return message.reply('❌ กรุณาระบุจำนวนข้อความที่ต้องการลบ เช่น `!dems 10`');
-            } else if (amount < 1 || amount > 100) {
-                return message.reply('❌ กรุณาระบุจำนวนระหว่าง 1 ถึง 100 ข้อความครับ (ข้อจำกัดของ Discord API)');
+            if (isNaN(amount) || amount < 1 || amount > 100) {
+                return message.reply('❌ กรุณาระบุจำนวนระหว่าง 1 ถึง 100 ข้อความครับ');
             }
-
             try {
-                // บวก 1 เข้าไปใน amount เพื่อให้ลบตัวคำสั่ง '!dems' ของผู้ใช้ทิ้งไปด้วย
-                // พารามิเตอร์ true ตัวหลังคือ filterOld ป้องกัน Error จากการลบข้อความที่เก่าเกิน 14 วัน
                 const deletedMessages = await message.channel.bulkDelete(amount + 1, true);
-                
-                // แจ้งผลการทำงานให้ผู้ใช้ทราบ (ลบออก 1 จาก length เพื่อไม่นับคำสั่งตัวเอง)
                 const replyMsg = await message.channel.send(`🚀 <@${message.author.id}> ทำการลบข้อความจำนวน **${deletedMessages.size - 1}** ข้อความเรียบร้อยแล้ว!`);
-                
-                // UX Design: ลบข้อความแจ้งเตือนตัวเองทิ้งหลังจากผ่านไป 5 วินาที เพื่อให้ห้องแชทสะอาด
-                setTimeout(() => {
-                    replyMsg.delete().catch(() => {}); // ใช้ catch ป้องกัน Error กรณีมีคนมือไวลบข้อความนี้ไปก่อน
-                }, 5000);
-
+                setTimeout(() => replyMsg.delete().catch(() => {}), 5000);
             } catch (error) {
                 console.error('❌ [Bulk Delete Error]:', error);
-                return message.channel.send('❌ เกิดข้อผิดพลาด! ไม่สามารถลบได้ (อาจมีแต่ข้อความที่เก่าเกิน 14 วัน)');
             }
-            
-            return; // จบการทำงานในบล็อกนี้ ไม่ส่งข้อความคำสั่งลบไปให้บอทอ่านออกเสียง
+            return;
         }
-
 
         // ==========================================
         // 🔊 2. ระบบ Text-to-Speech (น้องซูซี่)
         // ==========================================
         const config = client.ttsConfig;
 
-        // 🟢 คำสั่ง: "เปิดอ่านแชท"
+        // 🟢 เปิดอ่านแชท
         if (message.content === 'เปิดอ่านแชท') {
             const voiceChannel = message.guild.channels.cache.get(config.targetVoiceChannel);
-            
-            if (!voiceChannel) {
-                return message.reply('❌ ไม่พบห้องเสียงที่กำหนดในระบบครับ');
-            }
+            if (!voiceChannel) return message.reply('❌ ไม่พบห้องเสียงที่กำหนด');
 
             try {
                 config.connection = joinVoiceChannel({
                     channelId: voiceChannel.id,
                     guildId: message.guild.id,
                     adapterCreator: message.guild.voiceAdapterCreator,
-                    selfDeaf: false,
+                    selfDeaf: true, // แนะนำให้ปิดหูบอทไว้ เพื่อประหยัดแบนด์วิธเซิร์ฟเวอร์
                     selfMute: false
                 });
 
@@ -77,20 +54,18 @@ module.exports = {
                 config.connection.subscribe(config.player);
                 config.isActive = true;
 
-                // Event Listeners สำหรับ Player
                 config.player.on(AudioPlayerStatus.Idle, () => {
                     config.isPlaying = false;
                     playNextInQueue(client);
                 });
 
                 config.player.on('error', error => {
-                    console.error('❌ [Audio Player Error]:', error.message);
+                    console.error('❌ [Audio Player Error]:', error.message, error);
                     config.isPlaying = false;
                     playNextInQueue(client);
                 });
 
                 config.connection.on(VoiceConnectionStatus.Disconnected, () => {
-                    console.log('⚠️ บอทถูกตัดเชื่อมต่อออกจากห้องเสียง');
                     config.isActive = false;
                 });
 
@@ -101,45 +76,34 @@ module.exports = {
             }
         }
 
-        // 🔴 คำสั่ง: "ปิดอ่านแชท"
+        // 🔴 ปิดอ่านแชท
         if (message.content === 'ปิดอ่านแชท') {
-            if (config.connection) {
-                config.connection.destroy();
-            }
+            if (config.connection) config.connection.destroy();
             config.isActive = false;
             config.connection = null;
             if (config.player) config.player.stop();
             config.queue = [];
             config.isPlaying = false;
-
             return message.reply('<:white_heart:1536417255024492654> ซูซี่ยกเลิกที่จะอ่านแชทข้อความแล้วค่ะ');
         }
 
-        // 🔊 ระบบดักจับข้อความเพื่อส่งเข้าคิวอ่าน
+        // 🔊 ดักจับข้อความเข้าคิวอ่าน
         if (config.isActive && message.channel.id === config.targetTextChannel) {
             let textToRead = message.content;
-
-            if (message.attachments.size > 0) {
-                textToRead += textToRead ? " และส่งไฟล์" : "ส่งไฟล์";
-            }
-
+            if (message.attachments.size > 0) textToRead += textToRead ? " และส่งไฟล์" : "ส่งไฟล์";
             textToRead = textToRead.replace(/<a?:([a-zA-Z0-9_]+):\d+>/g, "อิโมจิ $1 ");
             textToRead = textToRead.replace(/https?:\/\/\S+/g, "ส่งลิงก์");
             textToRead = textToRead.trim();
 
             if (textToRead.length > 0) {
-                const safeText = textToRead.substring(0, 200);
-                config.queue.push(safeText);
-                
-                if (!config.isPlaying) {
-                    playNextInQueue(client);
-                }
+                config.queue.push(textToRead.substring(0, 200));
+                if (!config.isPlaying) playNextInQueue(client);
             }
         }
     },
 };
 
-// 🛠️ ฟังก์ชันเล่นเสียงจาก Queue ด้วย Base64 Stream (ป้องกัน Google Block IP)
+// 🛠️ ฟังก์ชันเล่นเสียงที่ได้รับการปรับแต่งสถาปัตยกรรมแล้ว (Robust Audio Pipeline)
 async function playNextInQueue(client) {
     const config = client.ttsConfig;
 
@@ -152,8 +116,9 @@ async function playNextInQueue(client) {
     const text = config.queue.shift();
 
     try {
-        console.log(`🔊 [TTS Speaking]: "${text}"`);
+        console.log(`🔊 [TTS Process]: กำลังสร้างเสียงสำหรับ -> "${text}"`);
 
+        // 1. ดึง Base64 จาก Google TTS
         const base64Audio = await googleTTS.getAudioBase64(text, {
             lang: 'th',
             slow: false,
@@ -161,15 +126,22 @@ async function playNextInQueue(client) {
             timeout: 10000,
         });
 
+        // 2. แปลงเป็น Buffer และ Readable Stream
         const buffer = Buffer.from(base64Audio, 'base64');
         const stream = Readable.from(buffer);
 
-        const resource = createAudioResource(stream);
+        // 3. 🚀 สร้าง Audio Resource พร้อมระบุ StreamType.Arbitrary ให้ FFmpeg ประมวลผล
+        const resource = createAudioResource(stream, {
+            inputType: StreamType.Arbitrary, // สำคัญมาก! บอกให้บอทรู้ว่านี่คือไฟล์ที่ต้องถูกแปลง
+        });
+
+        // 4. เล่นเสียง
         config.player.play(resource);
+        console.log(`✅ [TTS Success]: กำลังเล่นเสียง...`);
 
     } catch (error) {
-        console.error('❌ [TTS Generation Error]:', error.message);
+        console.error('❌ [TTS Generation/Play Error]:', error.message);
         config.isPlaying = false;
-        playNextInQueue(client); // ล้มเหลวก็ข้ามไปอ่านคิวถัดไปเลย
+        playNextInQueue(client);
     }
 }

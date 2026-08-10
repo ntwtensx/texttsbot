@@ -1,31 +1,34 @@
 // index.js
 require('dotenv').config();
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+
+// 🚀 [System Optimization] บังคับชี้เป้า FFmpeg Path ให้ระบบ Cloud (Render) หาเจอ 100%
+const ffmpeg = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpeg;
+
+const { Client, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
 const express = require('express');
 
 // 🚀 [1] ระบบ Web Server สำหรับ Keep-Alive บน Render
 const app = express();
-// ดึงค่า Port จาก Environment (เช่น 10000 บน Render) ถ้าไม่มีให้ใช้ 3000 (เครื่องเราเอง)
 const PORT = process.env.PORT || 3000; 
 
-app.get('/', (req, res) => res.send(`🚀 texttsbot is running securely on port ${PORT}!`));
+app.get('/', (req, res) => res.send(`🚀 texttsbot is running securely on port ${PORT}! (FFmpeg path: ${process.env.FFMPEG_PATH})`));
 app.listen(PORT, () => {
-    console.log(`🌐 [Web Server] เริ่มทำงานเรียบร้อยแล้ว! รันอยู่ที่ Port: ${PORT}`);
-    console.log(`💡 (หากอยู่บน Render การจับ Port ${PORT} ถือว่าระบบทำงานถูกต้อง 100%)`);
+    console.log(`🌐 [Web Server] เริ่มทำงานเรียบร้อยแล้วที่ Port: ${PORT}`);
 });
 
-// 🚀 [2] ตั้งค่า Client และ Intent (สิทธิ์ที่บอทต้องใช้)
+// 🚀 [2] ตั้งค่า Client และ Intent
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates // จำเป็นสำหรับการเชื่อมต่อห้องเสียง
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
-// 🚀 [3] สร้างตัวแปร Global สำหรับเก็บสถานะ TTS ของบอท
+// 🚀 [3] สร้าง Config สำหรับระบบ TTS
 client.ttsConfig = {
     isActive: false,
     connection: null,
@@ -36,7 +39,7 @@ client.ttsConfig = {
     targetTextChannel: '995629374722297946'
 };
 
-// 🚀 [4] โหลด Events อัตโนมัติ (Ready, MessageCreate)
+// 🚀 [4] โหลด Events
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 for (const file of eventFiles) {
     const event = require(`./events/${file}`);
@@ -47,5 +50,5 @@ for (const file of eventFiles) {
     }
 }
 
-// 🚀 [5] Login เข้าสู่ระบบ Discord
+// 🚀 [5] Login
 client.login(process.env.TOKEN);
