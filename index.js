@@ -1,8 +1,7 @@
 require('dotenv').config();
 
-// 🚀 [System Architecture Fix] 
-// บังคับให้ Node.js และระบบของ Render ชี้เป้าหมายไปหา FFmpeg ที่เราโหลดมา
-// ป้องกันปัญหา "เชื่อมต่อห้องได้แต่บอทไม่มีเสียง" (Audio Player Error)
+// 🚀 [System Architecture] บังคับชี้เป้าหมาย FFmpeg สำหรับ Render
+// แก้ปัญหาบอทเข้าห้องเสียงได้แต่ไม่มีเสียงพูด
 const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
@@ -11,13 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
-// สร้าง Express Server เล็กๆ เพื่อให้ Render สามารถ Bind Port ได้ (ป้องกันบอทดับ)
+// 🌐 [Web Service] สร้าง Express Server เพื่อให้ Render ตรวจสอบ Port ได้
 const app = express();
-app.get('/', (req, res) => res.send('🚀 บอทซูซี่กำลังทำงานอยู่ และพร้อมอ่านเสียงแล้ว!'));
+app.get('/', (req, res) => res.send('🚀 ระบบบอทซูซี่กำลังทำงานและพร้อมอ่านเสียงแล้ว!'));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 Web Server ทำงานที่พอร์ต ${PORT}`));
+app.listen(PORT, () => console.log(`🌐 [Server] Web Server ทำงานที่พอร์ต ${PORT}`));
 
-// กำหนดสิทธิ์ (Intents) ให้บอทมองเห็นแชทและห้องเสียง
+// 🤖 [Discord Client] กำหนดสิทธิ์ให้บอทมองเห็นข้อความและเข้าห้องเสียงได้
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -27,7 +26,7 @@ const client = new Client({
     ]
 });
 
-// ระบบโหลด Events อัตโนมัติ (Dynamic Event Handler)
+// 📂 [Event Handler] ระบบโหลดไฟล์ Event อัตโนมัติแบบไดนามิก
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
@@ -41,5 +40,5 @@ for (const file of eventFiles) {
     }
 }
 
-// ล็อกอินเข้าสู่ระบบ Discord
+// 🔑 เข้าสู่ระบบ Discord ด้วย Token จากไฟล์ .env
 client.login(process.env.TOKEN);
