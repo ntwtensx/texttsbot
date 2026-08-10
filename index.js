@@ -37,7 +37,7 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     // คำสั่งเปิดระบบอ่านแชท
-    if (message.content === 'เปิดอ่านระบบแชท') {
+    if (message.content === 'เปิดอ่านแชท') {
         if (isReadingActive) {
             return message.reply('<:white_heart:1536417255024492654> ระบบอ่านแชทเปิดอยู่แล้วค่ะ');
         }
@@ -59,7 +59,7 @@ client.on('messageCreate', async (message) => {
     }
 
     // คำสั่งปิดระบบอ่านแชท
-    if (message.content === 'ปิดอ่านระบบแชท') {
+    if (message.content === 'ปิดอ่านแชท') {
         if (!isReadingActive) {
             return message.reply('<:white_heart:1536417255024492654> ระบบอ่านแชทยังไม่ได้เปิดค่ะ');
         }
