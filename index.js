@@ -10,15 +10,16 @@ const fs = require('fs');
 const express = require('express');
 
 // 🚀 [1] ระบบ Web Server สำหรับ Keep-Alive บน Render
+// (ช่วยให้บอทออนไลน์ตลอด 24/7 เมื่อใช้ร่วมกับ UptimeRobot)
 const app = express();
 const PORT = process.env.PORT || 3000; 
 
-app.get('/', (req, res) => res.send(`🚀 texttsbot is running securely on port ${PORT}! (FFmpeg path: ${process.env.FFMPEG_PATH})`));
+app.get('/', (req, res) => res.send(`🚀 Rocket TTS Bot is running securely on port ${PORT}! (FFmpeg path: ${process.env.FFMPEG_PATH})`));
 app.listen(PORT, () => {
     console.log(`🌐 [Web Server] เริ่มทำงานเรียบร้อยแล้วที่ Port: ${PORT}`);
 });
 
-// 🚀 [2] ตั้งค่า Client และ Intent
+// 🚀 [2] ตั้งค่า Client และ Intent (ต้องให้ครอบคลุมการอ่านแชทและเสียง)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -28,7 +29,7 @@ const client = new Client({
     ]
 });
 
-// 🚀 [3] สร้าง Config สำหรับระบบ TTS
+// 🚀 [3] สร้าง Config สำหรับระบบ TTS (State Management)
 client.ttsConfig = {
     isActive: false,
     connection: null,
@@ -39,7 +40,7 @@ client.ttsConfig = {
     targetTextChannel: '995629374722297946'
 };
 
-// 🚀 [4] โหลด Events แบบ Dynamic
+// 🚀 [4] โหลด Events แบบ Dynamic (ยืดหยุ่นและรองรับสเกลโปรเจกต์ในอนาคต)
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 for (const file of eventFiles) {
     const event = require(`./events/${file}`);

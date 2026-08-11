@@ -2,7 +2,7 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, StreamType } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 const { Readable } = require('stream');
-// 🚀 [Audio Engineering] โหลดโมดูลสำหรับจัดการกระบวนการของ FFmpeg
+// 🚀 โหลดโมดูลสำหรับจัดการกระบวนการของ FFmpeg
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 
@@ -45,11 +45,12 @@ module.exports = {
             if (!voiceChannel) return message.reply('❌ ไม่พบห้องเสียงที่กำหนด');
 
             try {
+                // เชื่อมต่อห้องเสียง (ต้องมี libsodium-wrappers และ opusscript ถึงจะทำงานได้สมบูรณ์)
                 config.connection = joinVoiceChannel({
                     channelId: voiceChannel.id,
                     guildId: message.guild.id,
                     adapterCreator: message.guild.voiceAdapterCreator,
-                    selfDeaf: true,
+                    selfDeaf: true,  // ปิดหูบอท ลดภาระเซิร์ฟเวอร์
                     selfMute: false
                 });
 
@@ -59,7 +60,7 @@ module.exports = {
 
                 config.player.on(AudioPlayerStatus.Idle, () => {
                     config.isPlaying = false;
-                    playNextInQueue(client);
+                    playNextInQueue(client); // เมื่อพูดจบ ให้เรียกคิวต่อไป
                 });
 
                 config.player.on('error', error => {
@@ -69,13 +70,13 @@ module.exports = {
                 });
 
                 config.connection.on(VoiceConnectionStatus.Disconnected, () => {
-                    config.isActive = false;
+                    config.isActive = false; // ปิดระบบหากถูกเตะออกจากห้อง
                 });
 
-                return message.reply('<:white_heart:1536417255024492654> ซูซี่ปรับจูนเสียงใหม่ พร้อมอ่านแชทแล้วค่ะ');
+                return message.reply('<:white_heart:1536417255024492654> ซูซี่พร้อมใช้งานระบบเสียงสาวใส แล้วค่ะ');
             } catch (error) {
                 console.error('❌ [Connection Error]:', error);
-                return message.reply('❌ เกิดข้อผิดพลาดในการเชื่อมต่อห้องเสียง');
+                return message.reply('❌ เกิดข้อผิดพลาดในการเชื่อมต่อห้องเสียง ตรวจสอบสิทธิ์ของบอทด้วยครับ');
             }
         }
 
@@ -133,21 +134,13 @@ async function playNextInQueue(client) {
         const stream = Readable.from(buffer);
 
         // 2. 🚀 [Audio Signal Processing by FFmpeg] 
-        // สร้าง Pipeline ดัดแปลงคลื่นเสียงแบบ Real-time
         const ffmpegArgs = [
-            '-i', 'pipe:0', // รับ Input จาก Stream (Google TTS)
+            '-i', 'pipe:0', 
             '-af', 'asetrate=24000*1.15,aresample=48000,atempo=1/1.15,highpass=f=150,treble=g=4',
-            /* คำอธิบาย Audio Filters (Design):
-               - asetrate=24000*1.15 : ดัน Pitch เสียงให้สูงขึ้น 15% (เป็นสาวขึ้น)
-               - aresample=48000     : ปรับสเกลเสียงให้เข้ากับมาตรฐาน Discord
-               - atempo=1/1.15       : ดึงความเร็วกลับมาให้เท่าเดิม (จะได้ไม่พูดเร็วไป)
-               - highpass=f=150      : ตัดเสียงทุ้ม/เสียงอู้อี้ที่ต่ำกว่า 150Hz ทิ้ง (ให้เสียงใส)
-               - treble=g=4          : ดันปลายเสียงแหลมเพิ่มขึ้น 4 เดซิเบล (เพิ่มประกายเสียง)
-            */
-            '-f', 's16le',  // แปลงฟอร์แมตเป็น Raw PCM 16-bit
-            '-ar', '48000', // อัตราสุ่มสัญญาณ (Sample Rate)
-            '-ac', '2',     // ระบบเสียงสเตอริโอ 2 แชนเนล
-            'pipe:1'        // ปล่อย Output ออกไปยัง Discord Player
+            '-f', 's16le',  // แปลงฟอร์แมตเป็น Raw PCM 16-bit เพื่อส่งให้ @discordjs/voice นำไปเข้ารหัส Opus ต่อ
+            '-ar', '48000', 
+            '-ac', '2',     
+            'pipe:1'        
         ];
 
         // สร้าง Process ประมวลผลคลื่นเสียง
@@ -156,19 +149,24 @@ async function playNextInQueue(client) {
         // สูบเสียงจาก Google TTS เข้าไปใน FFmpeg
         stream.pipe(ffmpegProcess.stdin);
 
-        // 3. นำเสียงที่ดัดแปลงเสร็จแล้วป้อนให้บอท Discord ในรูปแบบ Raw Stream
+        // 3. นำเสียงที่ดัดแปลงเสร็จแล้วป้อนให้บอท Discord (ตัว @discordjs/voice จะใช้ opusscript แปลง Raw -> Opus ให้เราอัตโนมัติ)
         const resource = createAudioResource(ffmpegProcess.stdout, {
             inputType: StreamType.Raw,
         });
 
-        // ดักจับ Error จาก FFmpeg ป้องกันบอทแครช
+        // ดักจับ Error จาก FFmpeg
+        ffmpegProcess.stderr.on('data', (data) => {
+            // Uncomment บรรทัดล่างนี้หากต้องการดู Log การทำงานลึกๆ ของ FFmpeg
+            // console.log(`[FFmpeg Log]: ${data}`);
+        });
+
         ffmpegProcess.on('error', (err) => {
-            console.error('❌ [FFmpeg Error]:', err);
+            console.error('❌ [FFmpeg Process Error]:', err);
         });
 
         // 4. สั่งเล่นเสียงที่ผ่านการจูนแล้ว
         config.player.play(resource);
-        console.log(`✨ [Audio Engineering Success]: กำลังเล่นเสียงสาวน้อยใสๆ...`);
+        console.log(`✨ [Audio Engineering Success]: เริ่มเล่นเสียงที่ผ่านการจูนแล้ว`);
 
     } catch (error) {
         console.error('❌ [TTS Generation/Play Error]:', error.message);
