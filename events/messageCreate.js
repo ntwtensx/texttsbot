@@ -1,7 +1,6 @@
 // events/messageCreate.js
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, StreamType } = require('@discordjs/voice');
-const googleTTS = require('google-tts-api');
-const { Readable } = require('stream');
+const https = require('https'); // 🚀 เปลี่ยนมาใช้ Native HTTPS แทน google-tts-api
 
 module.exports = {
     name: 'messageCreate',
@@ -32,7 +31,7 @@ module.exports = {
         }
 
         // ==========================================
-        // 🔊 2. ระบบ Text-to-Speech (น้องซูซี่)
+        // 🔊 2. ระบบ Text-to-Speech (น้องซูซี่ - อัปเกรด Neural TTS)
         // ==========================================
         const config = client.ttsConfig;
 
@@ -46,7 +45,7 @@ module.exports = {
                     channelId: voiceChannel.id,
                     guildId: message.guild.id,
                     adapterCreator: message.guild.voiceAdapterCreator,
-                    selfDeaf: true, // แนะนำให้ปิดหูบอทไว้ เพื่อประหยัดแบนด์วิธเซิร์ฟเวอร์
+                    selfDeaf: true,
                     selfMute: false
                 });
 
@@ -60,7 +59,7 @@ module.exports = {
                 });
 
                 config.player.on('error', error => {
-                    console.error('❌ [Audio Player Error]:', error.message, error);
+                    console.error('❌ [Audio Player Error]:', error.message);
                     config.isPlaying = false;
                     playNextInQueue(client);
                 });
@@ -69,7 +68,7 @@ module.exports = {
                     config.isActive = false;
                 });
 
-                return message.reply('<:white_heart:1536417255024492654> ซูซี่พร้อมที่จะอ่านแชทข้อความแล้วค่ะ');
+                return message.reply('<:white_heart:1536417255024492654> ซูซี่พร้อมที่จะอ่านแชทข้อความด้วยเสียง Neural ใหม่แล้วค่ะ');
             } catch (error) {
                 console.error('❌ [Connection Error]:', error);
                 return message.reply('❌ เกิดข้อผิดพลาดในการเชื่อมต่อห้องเสียง');
@@ -103,6 +102,49 @@ module.exports = {
     },
 };
 
+// ==========================================
+// 🧠 วิศวกรรมเสียงใหม่: Microsoft Azure Neural TTS (freetts.org)
+// ==========================================
+
+function requestSpeechGeneration(text, voice = 'th-TH-PremwadeeNeural') {
+    return new Promise((resolve, reject) => {
+        const body = JSON.stringify({ text, voice, rate: '+0%', pitch: '+0Hz' });
+        const req = https.request({
+            hostname: 'freetts.org',
+            path: '/api/tts',
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Content-Length': Buffer.byteLength(body) 
+            }
+        }, res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (!parsed.file_id) throw new Error('API ไม่ส่ง file_id กลับมา');
+                    resolve(parsed.file_id);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+function fetchAudioStream(fileId) {
+    return new Promise((resolve, reject) => {
+        https.get(`https://freetts.org/api/audio/${fileId}`, res => {
+            if (res.statusCode !== 200) return reject(new Error('ดึงข้อมูลเสียงล้มเหลว'));
+            resolve(res); 
+        }).on('error', reject);
+    });
+}
+
 // 🛠️ ฟังก์ชันเล่นเสียงที่ได้รับการปรับแต่งสถาปัตยกรรมแล้ว (Robust Audio Pipeline)
 async function playNextInQueue(client) {
     const config = client.ttsConfig;
@@ -116,23 +158,17 @@ async function playNextInQueue(client) {
     const text = config.queue.shift();
 
     try {
-        console.log(`🔊 [TTS Process]: กำลังสร้างเสียงสำหรับ -> "${text}"`);
+        console.log(`🔊 [TTS Process]: กำลังสร้างเสียง Neural สำหรับ -> "${text}"`);
 
-        // 1. ดึง Base64 จาก Google TTS
-        const base64Audio = await googleTTS.getAudioBase64(text, {
-            lang: 'th',
-            slow: false,
-            host: 'https://translate.google.com',
-            timeout: 10000,
-        });
+        // 🚀 1. ยิง Request ขอไฟล์เสียง (แทนที่ Google TTS ตัวเดิม)
+        const fileId = await requestSpeechGeneration(text);
+        
+        // 🚀 2. ดึง Stream เสียงมาตรงๆ โดยไม่เซฟลงเครื่อง
+        const audioStream = await fetchAudioStream(fileId);
 
-        // 2. แปลงเป็น Buffer และ Readable Stream
-        const buffer = Buffer.from(base64Audio, 'base64');
-        const stream = Readable.from(buffer);
-
-        // 3. 🚀 สร้าง Audio Resource พร้อมระบุ StreamType.Arbitrary ให้ FFmpeg ประมวลผล
-        const resource = createAudioResource(stream, {
-            inputType: StreamType.Arbitrary, // สำคัญมาก! บอกให้บอทรู้ว่านี่คือไฟล์ที่ต้องถูกแปลง
+        // 🚀 3. สร้าง Audio Resource (ข้อมูลที่ส่งกลับมาเป็น MP3 Stream สามารถให้ FFmpeg จัดการได้เลย)
+        const resource = createAudioResource(audioStream, {
+            inputType: StreamType.Arbitrary, // ชี้ให้ FFmpeg รู้ว่าต้องแปลง Stream นี้
         });
 
         // 4. เล่นเสียง
@@ -142,6 +178,7 @@ async function playNextInQueue(client) {
     } catch (error) {
         console.error('❌ [TTS Generation/Play Error]:', error.message);
         config.isPlaying = false;
+        // 🛡️ หากเกิด Error (เช่น API ล่มชั่วคราว) ให้ข้ามไปอ่านคิวต่อไปทันที บอทจะได้ไม่ค้าง
         playNextInQueue(client);
     }
 }
