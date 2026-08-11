@@ -28,7 +28,7 @@ const client = new Client({
     ]
 });
 
-// 🚀 [3] สร้าง Config สำหรับระบบ TTS (Queue Management)
+// 🚀 [3] สร้าง Config สำหรับระบบ TTS
 client.ttsConfig = {
     isActive: false,
     connection: null,
@@ -39,7 +39,7 @@ client.ttsConfig = {
     targetTextChannel: '995629374722297946'
 };
 
-// 🚀 [4] โหลด Events (Dynamic Event Handler)
+// 🚀 [4] โหลด Events แบบ Dynamic
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 for (const file of eventFiles) {
     const event = require(`./events/${file}`);
@@ -50,5 +50,5 @@ for (const file of eventFiles) {
     }
 }
 
-// 🚀 [5] Login
+// 🚀 [5] Login เข้าสู่ระบบ Discord
 client.login(process.env.TOKEN);
