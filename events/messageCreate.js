@@ -2,6 +2,9 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, StreamType } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 const { Readable } = require('stream');
+// 🚀 [Audio Engineering] โหลดโมดูลสำหรับจัดการกระบวนการของ FFmpeg
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 
 module.exports = {
     name: 'messageCreate',
@@ -32,7 +35,7 @@ module.exports = {
         }
 
         // ==========================================
-        // 🔊 2. ระบบ Text-to-Speech (น้องซูซี่ - Google TTS)
+        // 🔊 2. ระบบ Text-to-Speech (น้องซูซี่ - สาวเสียงใส)
         // ==========================================
         const config = client.ttsConfig;
 
@@ -46,7 +49,7 @@ module.exports = {
                     channelId: voiceChannel.id,
                     guildId: message.guild.id,
                     adapterCreator: message.guild.voiceAdapterCreator,
-                    selfDeaf: true, // ปิดหูบอทเพื่อประหยัดแบนด์วิธ
+                    selfDeaf: true,
                     selfMute: false
                 });
 
@@ -69,7 +72,7 @@ module.exports = {
                     config.isActive = false;
                 });
 
-                return message.reply('<:white_heart:1536417255024492654> ซูซี่พร้อมที่จะอ่านแชทข้อความแล้วค่ะ');
+                return message.reply('<:white_heart:1536417255024492654> ซูซี่ปรับจูนเสียงใหม่ พร้อมอ่านแชทแล้วค่ะ');
             } catch (error) {
                 console.error('❌ [Connection Error]:', error);
                 return message.reply('❌ เกิดข้อผิดพลาดในการเชื่อมต่อห้องเสียง');
@@ -84,7 +87,7 @@ module.exports = {
             if (config.player) config.player.stop();
             config.queue = [];
             config.isPlaying = false;
-            return message.reply('<:white_heart:1536417255024492654> ซูซี่ยกเลิกที่จะอ่านแชทข้อความแล้วค่ะ');
+            return message.reply('<:white_heart:1536417255024492654> ซูซี่ยกเลิกการอ่านแชทแล้วค่ะ');
         }
 
         // 🔊 ดักจับข้อความเข้าคิวอ่าน
@@ -103,7 +106,7 @@ module.exports = {
     },
 };
 
-// 🛠️ ฟังก์ชันจัดการคิวและแปลงเสียงด้วย Google TTS
+// 🛠️ ฟังก์ชันจัดการคิวและ [Audio Signal Processing]
 async function playNextInQueue(client) {
     const config = client.ttsConfig;
 
@@ -118,7 +121,7 @@ async function playNextInQueue(client) {
     try {
         console.log(`🔊 [TTS Process]: กำลังสร้างเสียงสำหรับ -> "${text}"`);
 
-        // 1. ดึง Base64 จาก Google TTS API
+        // 1. ดึง Base64 จาก Google TTS (เสียง Original 24000Hz)
         const base64Audio = await googleTTS.getAudioBase64(text, {
             lang: 'th',
             slow: false,
@@ -126,18 +129,46 @@ async function playNextInQueue(client) {
             timeout: 10000,
         });
 
-        // 2. แปลง Base64 เป็น Buffer และ Readable Stream
         const buffer = Buffer.from(base64Audio, 'base64');
         const stream = Readable.from(buffer);
 
-        // 3. สร้าง Audio Resource ให้ FFmpeg ประมวลผลผ่าน StreamType.Arbitrary
-        const resource = createAudioResource(stream, {
-            inputType: StreamType.Arbitrary,
+        // 2. 🚀 [Audio Signal Processing by FFmpeg] 
+        // สร้าง Pipeline ดัดแปลงคลื่นเสียงแบบ Real-time
+        const ffmpegArgs = [
+            '-i', 'pipe:0', // รับ Input จาก Stream (Google TTS)
+            '-af', 'asetrate=24000*1.15,aresample=48000,atempo=1/1.15,highpass=f=150,treble=g=4',
+            /* คำอธิบาย Audio Filters (Design):
+               - asetrate=24000*1.15 : ดัน Pitch เสียงให้สูงขึ้น 15% (เป็นสาวขึ้น)
+               - aresample=48000     : ปรับสเกลเสียงให้เข้ากับมาตรฐาน Discord
+               - atempo=1/1.15       : ดึงความเร็วกลับมาให้เท่าเดิม (จะได้ไม่พูดเร็วไป)
+               - highpass=f=150      : ตัดเสียงทุ้ม/เสียงอู้อี้ที่ต่ำกว่า 150Hz ทิ้ง (ให้เสียงใส)
+               - treble=g=4          : ดันปลายเสียงแหลมเพิ่มขึ้น 4 เดซิเบล (เพิ่มประกายเสียง)
+            */
+            '-f', 's16le',  // แปลงฟอร์แมตเป็น Raw PCM 16-bit
+            '-ar', '48000', // อัตราสุ่มสัญญาณ (Sample Rate)
+            '-ac', '2',     // ระบบเสียงสเตอริโอ 2 แชนเนล
+            'pipe:1'        // ปล่อย Output ออกไปยัง Discord Player
+        ];
+
+        // สร้าง Process ประมวลผลคลื่นเสียง
+        const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
+        
+        // สูบเสียงจาก Google TTS เข้าไปใน FFmpeg
+        stream.pipe(ffmpegProcess.stdin);
+
+        // 3. นำเสียงที่ดัดแปลงเสร็จแล้วป้อนให้บอท Discord ในรูปแบบ Raw Stream
+        const resource = createAudioResource(ffmpegProcess.stdout, {
+            inputType: StreamType.Raw,
         });
 
-        // 4. สั่งเล่นเสียงผ่าน Player
+        // ดักจับ Error จาก FFmpeg ป้องกันบอทแครช
+        ffmpegProcess.on('error', (err) => {
+            console.error('❌ [FFmpeg Error]:', err);
+        });
+
+        // 4. สั่งเล่นเสียงที่ผ่านการจูนแล้ว
         config.player.play(resource);
-        console.log(`✅ [TTS Success]: กำลังเล่นเสียง...`);
+        console.log(`✨ [Audio Engineering Success]: กำลังเล่นเสียงสาวน้อยใสๆ...`);
 
     } catch (error) {
         console.error('❌ [TTS Generation/Play Error]:', error.message);
